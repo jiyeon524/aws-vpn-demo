@@ -1,0 +1,324 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "VPC template for HQ VPC environment. "
+Parameters:
+  VpcCidr:
+    AllowedPattern: "^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\\/(1[6-9]|2[0-8]))$"
+    ConstraintDescription: CIDR block parameter must be in the form x.x.x.x/16-28
+    Default: 10.0.0.0/16
+    Description: the HQ VPC CIDR block
+    Type: String
+  PublicSubnet0Cidr:
+    AllowedPattern: "^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\\/(1[6-9]|2[0-8]))$"
+    ConstraintDescription: CIDR block parameter must be in the form x.x.x.x/16-28
+    Default: 10.0.10.0/24
+    Description: CIDR block for Public subnet
+    Type: String
+  PrivateSubnet0Cidr:
+    AllowedPattern: "^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\\/(1[6-9]|2[0-8]))$"
+    ConstraintDescription: CIDR block parameter must be in the form x.x.x.x/16-28
+    Default: 10.0.20.0/24
+    Description: Private subnet CIDR block
+    Type: String
+  CVPNSubnet0Cidr:
+    AllowedPattern: "^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\\/(1[6-9]|2[0-8]))$"
+    ConstraintDescription: CIDR block parameter must be in the form x.x.x.x/16-28
+    Default: 10.0.30.0/24
+    Description: Subnet CIDR block for Client VPN attachment
+    Type: String
+  TGWSubnet0Cidr:
+    AllowedPattern: "^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\\/(1[6-9]|2[0-8]))$"
+    ConstraintDescription: CIDR block parameter must be in the form x.x.x.x/16-28
+    Default: 10.0.40.0/24
+    Description: Subnet CIDR block for TGW attachemnt
+    Type: String
+  InstanceType:
+    AllowedValues:
+    - t2.nano
+    - t2.micro
+    - t2.small
+    - t2.medium
+    - t2.large
+    - t2.xlarge
+    - t2.2xlarge
+    - t3.nano
+    - t3.micro
+    - t3.small
+    - t3.medium
+    - t3.large
+    - t3.xlarge
+    - t3.2xlarge
+    Default: t2.micro
+    Description: CGW simulating EC2 instance type.
+    Type: String
+  KeyPair:
+    Description: "Keypair to access the EC2 Instance"
+    Type: "AWS::EC2::KeyPair::KeyName"
+    Default: "Your KeyPair"
+  LatestAmiId:
+    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
+    Default: '/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2'
+
+Resources:
+  PrivateSubnet0:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Select
+        - 0
+        - Fn::GetAZs: !Ref 'AWS::Region'
+      CidrBlock: !Ref PrivateSubnet0Cidr
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Join [ '', [ 'HQ-PrivateSubnet-', !Ref 'AWS::StackName' ] ]
+        - Key: SubnetType
+          Value: Private
+      VpcId: !Ref Vpc
+  PrivateSubnetRouteTableAssociation0:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable0
+      SubnetId: !Ref PrivateSubnet0
+  CVPNPrivateSubnet0:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Select
+        - 0
+        - Fn::GetAZs: !Ref 'AWS::Region'
+      CidrBlock: !Ref CVPNSubnet0Cidr
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Join [ '', [ 'HQ-CVPNSubnet-', !Ref 'AWS::StackName' ] ]
+        - Key: SubnetType
+          Value: Private
+      VpcId: !Ref Vpc
+  PrivateSubnetRouteTableAssociation1:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable0
+      SubnetId: !Ref CVPNPrivateSubnet0
+  TGWPrivateSubnet0:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Select
+        - 0
+        - Fn::GetAZs: !Ref 'AWS::Region'
+      CidrBlock: !Ref TGWSubnet0Cidr
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Join [ '', [ 'HQ-TGWSubnet-', !Ref 'AWS::StackName' ] ]
+        - Key: SubnetType
+          Value: Private
+      VpcId: !Ref Vpc
+  PrivateSubnetRouteTableAssociation2:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable0
+      SubnetId: !Ref TGWPrivateSubnet0
+
+  PublicSubnet0:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Select
+        - 0
+        - Fn::GetAZs: !Ref 'AWS::Region'
+      CidrBlock: !Ref PublicSubnet0Cidr
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Join [ '', [ 'HQ-PublicSubnet-', !Ref 'AWS::StackName' ] ]
+        - Key: SubnetType
+          Value: Public
+      VpcId: !Ref Vpc
+
+  PublicRouteTableAssociation0:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet0
+      RouteTableId: !Ref PublicRouteTable
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Join [ '', [ 'HQ-IGW-', !Ref 'AWS::StackName' ] ]
+  AttachInternetGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId: !Ref InternetGateway
+      VpcId: !Ref Vpc
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: AttachInternetGateway
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Join [ '', [ 'HQ-PublicRouteTable-', !Ref 'AWS::StackName' ] ]
+        - Key: Network
+          Value: Public
+      VpcId: !Ref Vpc
+
+  NatEIP0:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+  NatGateway0:
+    Type: AWS::EC2::NatGateway
+    DependsOn: AttachInternetGateway
+    Properties:
+      AllocationId: !GetAtt NatEIP0.AllocationId
+      SubnetId: !Ref PublicSubnet0
+      Tags:
+        - Key: Name
+          Value: !Join [ '', [ 'HQ-Nat-', !Ref 'AWS::StackName' ] ]
+  PrivateRoute0:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable0
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway0
+  PrivateRouteTable0:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Join [ '', ['HQ-PrivateRouteTable-', !Ref 'AWS::StackName' ] ]
+        - Key: Network
+          Value: Private
+      VpcId: !Ref Vpc
+
+
+  Vpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCidr
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - Key: Name
+          Value: !Join [ '', [ 'HQ-VPC-', !Ref 'AWS::StackName' ] ]
+
+  HQServerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for HQ server
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: "0.0.0.0/0"
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: "0.0.0.0/0"
+        - IpProtocol: icmp
+          FromPort: -1
+          ToPort: -1
+          CidrIp: "0.0.0.0/0"
+      Tags:
+        - Key: Name
+          Value: !Sub "HQ-Server-sg-${AWS::StackName}"
+      VpcId:
+        !Ref Vpc
+
+  DCServerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Join
+        - "-"
+        - - Ref: AWS::StackName
+          - "SSMRole"
+          - Ref: AWS::Region
+      Path: "/"
+      ManagedPolicyArns:
+        - "arn:aws:iam::aws:policy/service-role/AmazonEC2RoleforSSM"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - sts:AssumeRole
+
+  DCInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: "/"
+      Roles:
+        - !Ref DCServerRole
+
+  HQServer:
+    Type: AWS::EC2::Instance
+    DependsOn: PrivateRoute0
+    Properties:
+      ImageId: !Ref LatestAmiId
+      InstanceType: !Ref InstanceType
+      IamInstanceProfile:
+        Ref: DCInstanceProfile
+      SecurityGroupIds:
+        - !Ref HQServerSecurityGroup
+      SubnetId: !Ref PrivateSubnet0
+      Tags:
+        - Key: Name
+          Value: !Join [ '', [ 'HQ-Server-', !Ref 'AWS::StackName' ] ]
+  
+
+
+  #Create Transit Gateway and attachment
+  TransitGateway:
+    Type: "AWS::EC2::TransitGateway"
+    Properties:
+      AmazonSideAsn: 64512
+      Description: "TGW of HQ VPC"
+      AutoAcceptSharedAttachments: "disable"
+      DefaultRouteTableAssociation: "enable"
+      DnsSupport: "enable"
+      VpnEcmpSupport: "enable"
+      Tags:
+        - Key: Name
+          Value: HQ-TGW
+  AttachHQVPC:
+    Type: "AWS::EC2::TransitGatewayAttachment"
+    Properties:
+      SubnetIds: 
+        - Ref: TGWPrivateSubnet0
+      Tags:
+        - Key: Name
+          Value: HQVPC-Attachement
+      TransitGatewayId: !Ref TransitGateway
+      VpcId:
+        !Ref Vpc
+
+Outputs:
+  Vpc:
+    Value: !Ref Vpc
+    Export:
+        Name: HQ-VPC-ID
+  VpcCidr:
+    Value: !Ref VpcCidr
+  CVPNSubnet:
+    Value: !Ref CVPNPrivateSubnet0
+    Export:
+        Name: CVPN-Subnet-ID
+  HQServerPrivateIp:
+    Value: !GetAtt HQServer.PrivateIp
+  SERVERSSH:
+    Description: "ssh command to HQ-server"
+    Value:
+      !Join [
+        "",
+        ["ssh -i ", Ref: "KeyPair", ".pem ec2-user@", !GetAtt "HQServer.PrivateIp"],
+      ]
+    Export:
+      Name: !Sub "HQ-server-ssh"
