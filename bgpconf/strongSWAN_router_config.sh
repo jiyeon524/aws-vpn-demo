@@ -1,7 +1,7 @@
 #!/bin/bash
 
 #
-# OpenSWAN router configuration
+# StrongSWAN router configuration
 #
 
 #Tunnel Information
