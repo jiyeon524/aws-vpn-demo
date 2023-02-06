@@ -1,0 +1,603 @@
+Description: VPN-at-a-glance - Depoly infra of HQ VPC and HQ ICD(Onprem) env. - MUST be applied in ap-northeast-2
+Parameters:
+  LatestAmiId:
+    Description: AMI for Misc Instances (default is latest AmaLinux2)
+    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
+    Default: '/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2'
+  RouterAmiId:
+    Description: AMI for the Router Instances (don't change)
+    Type: 'String'
+    Default: 'ami-0cb1d752d27600adb'
+Resources:
+  AWSVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: HQ-AWS-VPC
+  AWSTGWSubnetPrivateA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref AWSVPC
+      AvailabilityZone: !Select [ 0, !GetAZs '' ]
+      CidrBlock: 10.0.10.0/24
+      Tags:
+        - Key: Name
+          Value: HQVPC-TGWsubnet-A
+  AWSTGWSubnetPrivateB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref AWSVPC
+      AvailabilityZone: !Select [ 2, !GetAZs '' ]
+      CidrBlock: 10.0.20.0/24
+      Tags:
+        - Key: Name
+          Value: HQVPC-TGWsubnet-B
+  AWSCVPNSubnetPrivateA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref AWSVPC
+      AvailabilityZone: !Select [ 0, !GetAZs '' ]
+      CidrBlock: 10.0.30.0/24
+      Tags:
+        - Key: Name
+          Value: HQVPC-CVPNsubnet-A
+  AWSCVPNSubnetPrivateB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref AWSVPC
+      AvailabilityZone: !Select [ 2, !GetAZs '' ]
+      CidrBlock: 10.0.40.0/24
+      Tags:
+        - Key: Name
+          Value: HQVPC-CVPNsubnet-B         
+  AWSCustomRT: 
+    Type: 'AWS::EC2::RouteTable'
+    Properties:
+      VpcId: !Ref AWSVPC
+      Tags:
+      - Key: Name
+        Value: HQVPC-AWS-RT
+  AWSTGWDefaultRoute:
+    Type: AWS::EC2::Route
+    DependsOn: "AWSTGWVPC"
+    Properties:
+      TransitGatewayId: !Ref AWSTGW
+      RouteTableId: !Ref AWSCustomRT
+      DestinationCidrBlock: "0.0.0.0/0"
+  AWSRTAssociationTGWPrivateA:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref AWSTGWSubnetPrivateA
+      RouteTableId:
+        Ref: AWSCustomRT
+  AWSRTAssociationTGWPrivateB:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref AWSTGWSubnetPrivateB
+      RouteTableId:
+        Ref: AWSCustomRT
+  AWSRTAssociationCVPNPrivateA:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref AWSCVPNSubnetPrivateA
+      RouteTableId:
+        Ref: AWSCustomRT
+  AWSRTAssociationCVPNPrivateB:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref AWSCVPNSubnetPrivateB
+      RouteTableId:
+        Ref: AWSCustomRT
+  AWSInstanceSG:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      VpcId: !Ref AWSVPC
+      GroupDescription: Default HQ Server AWS SG
+      SecurityGroupIngress: 
+        - Description: 'Allow SSH IPv4 IN'
+          IpProtocol: tcp
+          FromPort: '22'
+          ToPort: '22'
+          CidrIp: '0.0.0.0/0'
+        - Description: 'Allow ICMP IPv4 IN'
+          IpProtocol: icmp
+          FromPort: -1
+          ToPort: -1
+          CidrIp: "0.0.0.0/0"
+        - Description: 'Allow ALL from ONPREM Networks'
+          IpProtocol: "-1"
+          CidrIp: '192.168.0.0/16'
+        - Description: 'Allow ALL from Branch Office Networks'
+          IpProtocol: "-1"
+          CidrIp: '172.16.0.0/16'        
+  AWSInstanceSGSelfReferenceRule:
+    Type: "AWS::EC2::SecurityGroupIngress"
+    Properties:
+      GroupId: !Ref AWSInstanceSG
+      IpProtocol: '-1'
+      SourceSecurityGroupId: !Ref AWSInstanceSG
+  AWSEC2A:
+    Type: AWS::EC2::Instance
+    DependsOn: 
+      - AWSssminterfaceendpoint
+      - AWSssmec2messagesinterfaceendpoint
+      - AWSssmmessagesinterfaceendpoint
+    Properties:
+      InstanceType: "t2.micro"
+      ImageId: !Ref LatestAmiId
+      IamInstanceProfile: !Ref AWSEC2InstanceProfile
+      SubnetId: !Ref AWSTGWSubnetPrivateA
+      SecurityGroupIds: 
+        - !Ref AWSInstanceSG
+      Tags:
+        - Key: Name
+          Value: HQ-SERVER-A
+  EC2B:
+    Type: AWS::EC2::Instance
+    DependsOn: 
+      - AWSssminterfaceendpoint
+      - AWSssmec2messagesinterfaceendpoint
+      - AWSssmmessagesinterfaceendpoint
+    Properties:
+      InstanceType: "t2.micro"
+      ImageId: !Ref LatestAmiId
+      IamInstanceProfile: !Ref AWSEC2InstanceProfile
+      SubnetId: !Ref AWSTGWSubnetPrivateB
+      SecurityGroupIds: 
+        - !Ref AWSInstanceSG
+      Tags:
+        - Key: Name
+          Value: HQ-SERVER-B
+  AWSEC2Role:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+              - ec2.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /
+      Policies:
+        - PolicyName: root
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action: 
+                  - 'ssm:DescribeAssociation'
+                  - 'ssm:GetDeployablePatchSnapshotForInstance'
+                  - 'ssm:GetDocument'
+                  - 'ssm:DescribeDocument'
+                  - 'ssm:GetManifest'
+                  - 'ssm:GetParameter'
+                  - 'ssm:GetParameters'
+                  - 'ssm:ListAssociations'
+                  - 'ssm:ListInstanceAssociations'
+                  - 'ssm:PutInventory'
+                  - 'ssm:PutComplianceItems'
+                  - 'ssm:PutConfigurePackageResult'
+                  - 'ssm:UpdateAssociationStatus'
+                  - 'ssm:UpdateInstanceAssociationStatus'
+                  - 'ssm:UpdateInstanceInformation'
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - 'ssmmessages:CreateControlChannel'
+                  - 'ssmmessages:CreateDataChannel'
+                  - 'ssmmessages:OpenControlChannel'
+                  - 'ssmmessages:OpenDataChannel' 
+                Resource: '*'
+              - Effect: Allow
+                Action: 
+                  - 'ec2messages:AcknowledgeMessage'
+                  - 'ec2messages:DeleteMessage'
+                  - 'ec2messages:FailMessage'
+                  - 'ec2messages:GetEndpoint'
+                  - 'ec2messages:GetMessages'
+                  - 'ec2messages:SendReply'
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - 's3:*'
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - 'sns:*'
+                Resource: '*'
+  AWSEC2InstanceProfile:
+    Type: 'AWS::IAM::InstanceProfile'
+    Properties:
+      Path: /
+      Roles:
+        - !Ref AWSEC2Role
+  AWSssminterfaceendpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcEndpointType: "Interface"
+      PrivateDnsEnabled: "True"
+      SubnetIds:
+        - !Ref AWSTGWSubnetPrivateA
+        - !Ref AWSTGWSubnetPrivateB
+      SecurityGroupIds:
+        - !Ref AWSInstanceSG
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.ssm
+      VpcId: !Ref AWSVPC
+  AWSssmec2messagesinterfaceendpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcEndpointType: "Interface"
+      PrivateDnsEnabled: "True"
+      SubnetIds:
+        - !Ref AWSTGWSubnetPrivateA
+        - !Ref AWSTGWSubnetPrivateB
+      SecurityGroupIds:
+        - !Ref AWSInstanceSG
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.ec2messages
+      VpcId: !Ref AWSVPC
+  AWSssmmessagesinterfaceendpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcEndpointType: "Interface"
+      PrivateDnsEnabled: "True"
+      SubnetIds:
+        - !Ref AWSTGWSubnetPrivateA
+        - !Ref AWSTGWSubnetPrivateB
+      SecurityGroupIds:
+        - !Ref AWSInstanceSG
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.ssmmessages
+      VpcId: !Ref AWSVPC
+  AWSTGW:
+    Type: "AWS::EC2::TransitGateway"
+    Properties:
+      AmazonSideAsn: 64512
+      Description: "A4LTGW"
+      DefaultRouteTableAssociation: "enable"
+      DnsSupport: "enable"
+      VpnEcmpSupport: "enable"
+  AWSTGWVPC:
+    Type: AWS::EC2::TransitGatewayAttachment
+    Properties: 
+      SubnetIds: 
+        - !Ref AWSTGWSubnetPrivateA
+        - !Ref AWSTGWSubnetPrivateB
+      Tags: 
+        - Key: Name
+          Value: HQVPCATTACHMENT
+      TransitGatewayId: !Ref AWSTGW
+      VpcId: !Ref AWSVPC  
+  
+  #HQ-OnpremIDC Infrastruture
+  ONPREMVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 192.168.0.0/16
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: HQ-IDC
+  ONPREMInternetGateway:
+    Type: 'AWS::EC2::InternetGateway'
+    Properties:
+      Tags:
+      - Key: Name
+        Value: IGW-HQ-IDC
+  ONPREMInternetGatewayAttachment:
+    Type: 'AWS::EC2::VPCGatewayAttachment'
+    Properties:
+      VpcId: !Ref ONPREMVPC
+      InternetGatewayId: !Ref ONPREMInternetGateway
+  ONPREMPub:
+    Type: AWS::EC2::Subnet
+    Properties:
+      MapPublicIpOnLaunch: true
+      VpcId: !Ref ONPREMVPC
+      AvailabilityZone: !Select [ 0, !GetAZs '' ]
+      CidrBlock: 192.168.1.0/24
+      Tags:
+        - Key: Name
+          Value: HQ-IDC-PUBLIC
+  ONPREMPriv1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref ONPREMVPC
+      AvailabilityZone: !Select [ 0, !GetAZs '' ]
+      CidrBlock: 192.168.2.0/24
+      Tags:
+        - Key: Name
+          Value: HQ-IDC-PRIVATE
+  ONPREMPrivateRT1: 
+    Type: 'AWS::EC2::RouteTable'
+    Properties:
+      VpcId: !Ref ONPREMVPC
+      Tags:
+      - Key: Name
+        Value: HQ-IDC-PRIVATE-RT
+  ONPREMPublicRT: 
+    Type: 'AWS::EC2::RouteTable'
+    Properties:
+      VpcId: !Ref ONPREMVPC
+      Tags:
+      - Key: Name
+        Value: HQ-IDC-PUBLIC-RT
+  ONPREMRouteDefaultIPV4Pub: 
+    Type: 'AWS::EC2::Route'
+    DependsOn: ONPREMInternetGatewayAttachment
+    Properties:
+      RouteTableId:
+        Ref: ONPREMPublicRT
+      DestinationCidrBlock: '0.0.0.0/0'
+      GatewayId:
+        Ref: ONPREMInternetGateway
+  ONPREMRoute1AWSIPv4:
+    Type: 'AWS::EC2::Route'
+    Properties:
+      RouteTableId:
+        Ref: ONPREMPrivateRT1
+      DestinationCidrBlock: '0.0.0.0/0'
+      NetworkInterfaceId: !Ref ONPREMENIR1PRIVATE
+  ONPREMRTOnPremPriv1:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref ONPREMPriv1
+      RouteTableId:
+        Ref: ONPREMPrivateRT1
+  ONPREMRTOnPremPub:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref ONPREMPub
+      RouteTableId:
+        Ref: ONPREMPublicRT
+  Router1EIP:
+    Type: AWS::EC2::EIP
+    DependsOn: ONPREMInternetGatewayAttachment
+  Router1EIPAssociation:
+    Type: AWS::EC2::EIPAssociation
+    Properties:
+      AllocationId: !GetAtt Router1EIP.AllocationId
+      NetworkInterfaceId: !GetAtt ONPREMENIR1PUBLIC.Id
+  ONPREMRouter1:
+    Type: AWS::EC2::Instance
+    DependsOn: 
+      - ONPREMssmVPCe
+      - ONPREMssmec2messagesVPCe
+      - ONPREMssmmessagesVPCe
+    Properties:
+      NetworkInterfaces:
+      - NetworkInterfaceId: !Ref ONPREMENIR1PUBLIC
+        DeviceIndex: 0
+      - NetworkInterfaceId: !Ref ONPREMENIR1PRIVATE
+        DeviceIndex: 1
+      AvailabilityZone: !Select [ 0, !GetAZs '' ]
+      InstanceType: "t3.small"
+      ImageId: !Ref RouterAmiId
+      IamInstanceProfile: !Ref ONPREMEC2InstanceProfile
+      Tags:
+        - Key: Name
+          Value: HQ-IDC-ROUTER1
+      UserData:
+        Fn::Base64: !Sub |
+            #!/bin/bash -xe
+            apt-get update && apt-get install -y strongswan wget
+            mkdir /home/ubuntu/demo_assets
+            cd /home/ubuntu/demo_assets
+            wget https://github.com/jiyeon524/aws-vpn-demo/raw/main/bgpconf/51-eth1.yaml
+            wget https://github.com/jiyeon524/aws-vpn-demo/raw/main/bgpconf/ipsec-vti.sh
+            wget https://github.com/jiyeon524/aws-vpn-demo/raw/main/bgpconf/strongSWAN_router_config.sh
+            wget https://github.com/jiyeon524/aws-vpn-demo/raw/main/bgpconf/ffrouting-install.sh
+            chown ubuntu:ubuntu /home/ubuntu/demo_assets -R
+            cp /home/ubuntu/demo_assets/51-eth1.yaml /etc/netplan
+            netplan --debug apply
+            chmod +x ffrouting-install.sh
+            ./ffrouting-install.sh
+  ONPREMENIR1PRIVATE:
+    Type: AWS::EC2::NetworkInterface
+    Properties:
+      SubnetId: !Ref ONPREMPriv1
+      Description: Router1 PRIVATE INTERFACE
+      GroupSet: 
+      - !Ref ONPREMInstanceSG
+      SourceDestCheck: false
+      Tags:
+        -
+          Key: Name
+          Value: HQ-IDC-R1-PRIVATE
+  ONPREMENIR1PUBLIC:
+    Type: AWS::EC2::NetworkInterface
+    Properties:
+      SubnetId: !Ref ONPREMPub
+      Description: Router1 PUBLIC INTERFACE
+      GroupSet: 
+      - !Ref ONPREMInstanceSG
+      SourceDestCheck: false
+      Tags:
+        -
+          Key: Name
+          Value: HQ-IDC-R1-PUBLIC
+  ONPREMSERVER1:
+    Type: AWS::EC2::Instance
+    DependsOn: 
+      - ONPREMssmVPCe
+      - ONPREMssmec2messagesVPCe
+      - ONPREMssmmessagesVPCe
+    Properties:
+      InstanceType: "t2.micro"
+      ImageId: !Ref LatestAmiId
+      IamInstanceProfile: !Ref ONPREMEC2InstanceProfile
+      SubnetId: !Ref ONPREMPriv1
+      SecurityGroupIds: 
+        - !Ref ONPREMInstanceSG
+      Tags:
+        - Key: Name
+          Value: HQ-IDC-SERVER1
+  ONPREMEC2Role:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+              - ec2.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /
+      Policies:
+        - PolicyName: root
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action: 
+                  - 'ssm:DescribeAssociation'
+                  - 'ssm:GetDeployablePatchSnapshotForInstance'
+                  - 'ssm:GetDocument'
+                  - 'ssm:DescribeDocument'
+                  - 'ssm:GetManifest'
+                  - 'ssm:GetParameter'
+                  - 'ssm:GetParameters'
+                  - 'ssm:ListAssociations'
+                  - 'ssm:ListInstanceAssociations'
+                  - 'ssm:PutInventory'
+                  - 'ssm:PutComplianceItems'
+                  - 'ssm:PutConfigurePackageResult'
+                  - 'ssm:UpdateAssociationStatus'
+                  - 'ssm:UpdateInstanceAssociationStatus'
+                  - 'ssm:UpdateInstanceInformation'
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - 'ssmmessages:CreateControlChannel'
+                  - 'ssmmessages:CreateDataChannel'
+                  - 'ssmmessages:OpenControlChannel'
+                  - 'ssmmessages:OpenDataChannel' 
+                Resource: '*'
+              - Effect: Allow
+                Action: 
+                  - 'ec2messages:AcknowledgeMessage'
+                  - 'ec2messages:DeleteMessage'
+                  - 'ec2messages:FailMessage'
+                  - 'ec2messages:GetEndpoint'
+                  - 'ec2messages:GetMessages'
+                  - 'ec2messages:SendReply'
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - 's3:*'
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - 'sns:*'
+                Resource: '*'
+  ONPREMEC2InstanceProfile:
+    Type: 'AWS::IAM::InstanceProfile'
+    Properties:
+      Path: /
+      Roles:
+        - !Ref ONPREMEC2Role
+  ONPREMInstanceSG:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      VpcId: !Ref ONPREMVPC
+      GroupDescription: Default ONPREM SG
+      SecurityGroupIngress: 
+        - Description: 'Allow All from AWS Environment'
+          IpProtocol: '-1'
+          CidrIp: '10.0.0.0/16'
+        - Description: 'Allow All from BranchOffice Environment'
+          IpProtocol: '-1'
+          CidrIp: '172.32.0.0/16'
+        - Description: 'Allow ICMP IPv4 IN'
+          IpProtocol: icmp
+          FromPort: -1
+          ToPort: -1
+          CidrIp: "0.0.0.0/0"
+        - Description: 'Allow VPN tunnel UDP port 500'
+          IpProtocol: udp
+          FromPort: '500'
+          ToPort: '500'
+          CidrIp: "0.0.0.0/0"
+        - Description: 'Allow VPN tunnel UDP port 4500'
+          IpProtocol: udp
+          FromPort: '4500'
+          ToPort: '4500'
+          CidrIp: "0.0.0.0/0"
+  ONPREMInstanceSGSelfReferenceRule:
+    Type: "AWS::EC2::SecurityGroupIngress"
+    Properties:
+      GroupId: !Ref ONPREMInstanceSG
+      IpProtocol: '-1'
+      SourceSecurityGroupId: !Ref ONPREMInstanceSG
+  ONPREMssmVPCe:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcEndpointType: "Interface"
+      PrivateDnsEnabled: "True"
+      SubnetIds:
+        - !Ref ONPREMPub
+      SecurityGroupIds:
+        - !Ref ONPREMInstanceSG
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.ssm
+      VpcId: !Ref ONPREMVPC
+  ONPREMssmec2messagesVPCe:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcEndpointType: "Interface"
+      PrivateDnsEnabled: "True"
+      SubnetIds:
+        - !Ref ONPREMPub
+      SecurityGroupIds:
+        - !Ref ONPREMInstanceSG
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.ec2messages
+      VpcId: !Ref ONPREMVPC
+  ONPREMssmmessagesVPCe:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcEndpointType: "Interface"
+      PrivateDnsEnabled: "True"
+      SubnetIds:
+        - !Ref ONPREMPub
+      SecurityGroupIds:
+        - !Ref ONPREMInstanceSG
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.ssmmessages
+      VpcId: !Ref ONPREMVPC
+  ONPREMs3VPCe:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      RouteTableIds:
+        - !Ref ONPREMPublicRT
+        - !Ref ONPREMPrivateRT1
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.s3
+      VpcId: !Ref ONPREMVPC
+  VPN1LogGroup: 
+    Type: AWS::Logs::LogGroup
+    Properties: 
+      LogGroupName: "/aws/vpn/HQ-IDCVPNLogs"
+      RetentionInDays: 14
+  VPN2LogGroup: 
+    Type: AWS::Logs::LogGroup
+    Properties: 
+      LogGroupName: "/aws/vpn/HQ-OverseasBranchVPNLogs"
+      RetentionInDays: 14
+  CVPNLogGroup: 
+    Type: AWS::Logs::LogGroup
+    Properties: 
+      LogGroupName: "/aws/vpn/Client-VPNLogs"
+      RetentionInDays: 14
+
+Outputs:
+  Router1Public:
+    Description: Public IP of Router1
+    Value: !GetAtt ONPREMRouter1.PublicIp
+  Router1Private:
+    Description: Private IP of Router1
+    Value: !GetAtt ONPREMRouter1.PrivateIp
