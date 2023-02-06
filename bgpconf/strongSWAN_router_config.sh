@@ -24,11 +24,6 @@ echo "export PSK_KEY=${PSK_KEY}" | tee -a ~/.bash_profile
 
 source ~/.bash_profile
 
-sed -i 's/CONN_TUNNEL1_ONPREM_INSIDE_IP/<CGW_TUNNEL1_INSIDE_ADDRESS_WITH/30>/g' ipsec-vti.sh
-sed -i 's/CONN_TUNNEL1_AWS_INSIDE_IP/<VPN_TUNNEL1_INSIDE_ADDRESS_WITH/30>/g' ipsec-vti.sh
-sed -i 's/CONN_TUNNEL2_ONPREM_INSIDE_IP/<CGW_TUNNEL2_INSIDE_ADDRESS_WITH/30>/g' ipsec-vti.sh
-sed -i 's/CONN_TUNNEL2_AWS_INSIDE_IP/<VPN_TUNNEL2_INSIDE_ADDRESS_WITH/30>/g' ipsec-vti.sh
-
 cat <<EOF > /etc/ipsec.conf
 conn %default
          # Authentication Method : Pre-Shared Key
