@@ -10,8 +10,8 @@ export ROUTER_PRIVATE_IP=$(hostname -i)
 export ROUTER_PUBLIC_IP=$(curl -s ifconfig.me)
 
 echo "Please input Outside IP of VPN tunnels"
-read -p "VPN Outside IP(public) address for Tunnel 1 : " CONN_TUNNEL1_AWS_OUTSIDE_IP
-read -p "VPN Outside IP(public) address for Tunnel 2 : " CONN_TUNNEL2_AWS_OUTSIDE_IP
+read -p "VPN Outside IP(public) address for Tunnel 1 :" CONN_TUNNEL1_AWS_OUTSIDE_IP
+read -p "VPN Outside IP(public) address for Tunnel 2 :" CONN_TUNNEL2_AWS_OUTSIDE_IP
 
 export PSK_KEY="strongswan_awsvpn"
 
