@@ -126,8 +126,8 @@ Resources:
             mkdir /home/ubuntu/demo_assets
             cd /home/ubuntu/demo_assets
             wget https://github.com/jiyeon524/aws-vpn-demo/raw/main/bgpconf/51-eth1.yaml
-            wget https://github.com/jiyeon524/aws-vpn-demo/raw/main/bgpconf/ipsec-vti.sh
-            wget https://github.com/jiyeon524/aws-vpn-demo/raw/main/bgpconf/strongSWAN_router_config.sh
+            wget https://github.com/jiyeon524/aws-vpn-demo/raw/main/bgpconf/ipsec-vti_global.sh
+            wget https://github.com/jiyeon524/aws-vpn-demo/raw/main/bgpconf/strongSWAN_global_router_config.sh
             wget https://github.com/jiyeon524/aws-vpn-demo/raw/main/bgpconf/ffrouting-install.sh
             chown ubuntu:ubuntu /home/ubuntu/demo_assets -R
             cp /home/ubuntu/demo_assets/51-eth1.yaml /etc/netplan
